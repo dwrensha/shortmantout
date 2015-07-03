@@ -1,0 +1,14 @@
+[package]
+
+name = "portmantout"
+version = "0.0.0"
+authors = [ "David Renshaw <dwrenshaw@gmail.com>" ]
+license = "MIT"
+description = "trying to compute an optimal portmantout"
+
+[[bin]]
+
+name = "normalize"
+path = "src/normalize.rs"
+
+

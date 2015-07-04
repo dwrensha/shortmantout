@@ -24,3 +24,7 @@ path = "src/normalize.rs"
 name = "verify"
 path = "src/verify.rs"
 
+[[bin]]
+
+name = "join"
+path = "src/join.rs"

@@ -10,16 +10,46 @@ impl ::radix_trie::TrieKey for BytesTrieKey {
     }
 }
 
-pub type Trie = ::radix_trie::Trie<BytesTrieKey, ()>;
 
-fn verify_contains_all(portmantout: &[u8], words: &[Vec<u8>]) -> Result<(), Vec<u8>> {
-    for word in words {
-        if !::carrycoat::contains_subsequence(portmantout, &word) {
-            return Err(word.clone());
+fn verify_contains_all(portmantout: &[u8], word_list: &[Vec<u8>]) -> Result<(), Vec<u8>> {
+
+    use std::collections::hash_map::HashMap;
+    use std::collections::VecDeque;
+
+    let mut words = HashMap::<Vec<u8>, bool>::new();
+    let mut deq = VecDeque::<Vec<u8>>::new();
+
+
+    for word in word_list {
+        words.insert(word.clone(), false);
+    }
+
+    for byte in portmantout {
+        deq.push_back(Vec::new());
+        for word in deq.iter_mut() {
+            word.push(*byte);
+            match words.get_mut(word) {
+                None => {}
+                Some(b) => {
+                    *b = true;
+                }
+            }
+        }
+        if deq.len() > 30 {
+            deq.pop_front();
         }
     }
+
+    for (k, v) in words {
+        if !v {
+            return Err(k.clone());
+        }
+    }
+
     return Ok(());
 }
+
+pub type Trie = ::radix_trie::Trie<BytesTrieKey, ()>;
 
 fn verify_cover(portmantout: &[u8], words: &Trie) -> Result<(), usize> {
     let mut verified_thru :usize = 0;

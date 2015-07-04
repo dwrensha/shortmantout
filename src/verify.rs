@@ -1,6 +1,16 @@
+extern crate radix_trie;
 extern crate carrycoat;
 
-use std::collections::hash_set::HashSet;
+#[derive(PartialEq, Eq, Debug)]
+pub struct BytesTrieKey(Vec<u8>);
+
+impl ::radix_trie::TrieKey for BytesTrieKey {
+    fn encode(&self) -> Vec<u8> {
+        self.0.to_vec()
+    }
+}
+
+pub type Trie = ::radix_trie::Trie<BytesTrieKey, ()>;
 
 fn verify_contains_all(portmantout: &[u8], words: &[Vec<u8>]) -> Result<(), Vec<u8>> {
     for word in words {
@@ -11,7 +21,73 @@ fn verify_contains_all(portmantout: &[u8], words: &[Vec<u8>]) -> Result<(), Vec<
     return Ok(());
 }
 
-fn verify_cover(portmantout: &[u8], words: &HashSet<Vec<u8>>) -> Result<(), usize> {
+fn verify_cover(portmantout: &[u8], words: &Trie) -> Result<(), usize> {
+    let mut verified_thru :usize = 0;
+    let mut word_start_idx :usize = 0;
+    let mut word = Vec::new();
+    let mut good_word;
+    'outer: while verified_thru + 1 < portmantout.len() {
+        if word_start_idx > verified_thru {
+            println!("nope: {:?}", ::std::str::from_utf8(&word));
+            println!("p length: {}", portmantout.len());
+            println!("verified thru: {}", verified_thru);
+            return Err(word_start_idx);
+        }
+
+        good_word = None;
+        word.clear();
+        let mut word_end_idx = word_start_idx;
+
+        while word_end_idx <= verified_thru {
+            word.push(portmantout[word_end_idx]);
+            word_end_idx += 1;
+        }
+
+        {
+            let key = BytesTrieKey(word.clone());
+            match words.get_descendant(&key) {
+                Some(node) if node.len() > 0 => {
+                    if node.key().is_some() {
+                        good_word = Some(word.clone());
+                    }
+                }
+                _ => {
+                    // we can't make a word starting with this letter!
+                    word_start_idx += 1;
+                    continue 'outer;
+                }
+            }
+        }
+
+        'inner: while word_end_idx < portmantout.len() {
+            word.push(portmantout[word_end_idx]);
+            // see whether we can add one more letter
+            let key = BytesTrieKey(word.clone());
+            match words.get_descendant(&key) {
+                Some(node) if node.len() > 0 => {
+                    if node.key().is_some() {
+                        good_word = Some(word.clone());
+                    }
+                    word_end_idx += 1;
+                    continue 'inner;
+                }
+                _ => { }
+            }
+            // We can't add one more letter.
+            word.pop();
+
+            match good_word {
+                Some(ref w) => {
+                    println!("yay: {:?}", ::std::str::from_utf8(&w));
+                    verified_thru = word_start_idx + w.len();
+                }
+                None => { }
+            }
+            word_start_idx += 1;
+            continue 'outer;
+        }
+        unimplemented!();
+    }
     return Ok(());
 }
 
@@ -27,9 +103,9 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     let mut portmantout = Vec::new();
     try!(try!(::std::fs::File::open(&args[1])).read_to_end(&mut portmantout));
 
-    let mut words = HashSet::<Vec<u8>>::new();
+    let mut words = Trie::new();
     for maybe_word in ::std::io::BufReader::new(try!(::std::fs::File::open(&args[2]))).split('\n' as u8) {
-        words.insert(try!(maybe_word));
+        words.insert(BytesTrieKey(try!(maybe_word)), ());
     }
 
     println!("word count: {}", words.len());
@@ -40,7 +116,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
             println!("fails to cover character at index {}", n);
         }
     }
-
+/*
     let mut normalized_words = Vec::new();
     for maybe_word in ::std::io::BufReader::new(try!(::std::fs::File::open(&args[3]))).split('\n' as u8) {
         normalized_words.push(try!(maybe_word));
@@ -53,7 +129,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
             println!("does not contain {:?}", ::std::str::from_utf8(&word));
         }
     }
-
+*/
     return Ok(());
 }
 

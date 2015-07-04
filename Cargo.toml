@@ -6,6 +6,9 @@ authors = [ "David Renshaw <dwrenshaw@gmail.com>" ]
 license = "MIT"
 description = "trying to compute an optimal portmantout"
 
+[dependencies]
+radix_trie = "*"
+
 [lib]
 
 name = "carrycoat"

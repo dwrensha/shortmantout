@@ -1,3 +1,7 @@
+//! Receives an (ascii, newline-delimited) wordlist on stdin. Removes all words that are contained in
+//! other words. Writes the resulting word list to stdout.
+//!
+
 extern crate carrycoat;
 
 pub fn main() {

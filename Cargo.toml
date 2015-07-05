@@ -26,5 +26,10 @@ path = "src/verify.rs"
 
 [[bin]]
 
+name = "generate"
+path = "src/generate.rs"
+
+[[bin]]
+
 name = "join"
 path = "src/join.rs"

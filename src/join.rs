@@ -65,7 +65,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
 
     particles_trie.remove(&BytesTrieKey(starticle));
 
-    'outer: while particles_trie.len() > 310 {
+    'outer: while particles_trie.len() > 0 {
         let mut best_padding :Option<Vec<u8>> = None;
         let mut best_next_particle :Option<Vec<u8>> = None;
         let mut overlap_word :Option<Vec<u8>> = None;
@@ -124,29 +124,6 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
                 panic!("impossible");
             }
             _ => unreachable!(),
-        }
-    }
-
-    // work around bug in radix_tree?
-
-    let mut last : Option<u8> = Some(*portmantout.last().unwrap());
-    for key in particles_trie.keys() {
-        let particle = key.0.clone();
-        match last {
-            Some(a) => {
-                let &b = particle.first().expect("empty particle?");
-                let ref joiner = joiners[&(a,b)];
-                for idx in 1..(joiner.len()-1){
-                    portmantout.push(joiner[idx]);
-                }
-
-            }
-            None => {}
-        }
-
-        last = Some(*particle.last().expect("empty particle?"));
-        for c in &particle {
-            portmantout.push(*c);
         }
     }
 

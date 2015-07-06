@@ -2,7 +2,7 @@
 name = "carrycoat"
 version = "0.0.0"
 dependencies = [
- "radix_trie 0.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "radix_trie 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -12,7 +12,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "radix_trie"
-version = "0.0.6"
+version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "nibble_vec 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)",

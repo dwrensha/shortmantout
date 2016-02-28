@@ -9,6 +9,7 @@ description = "trying to compute an optimal portmantout"
 [dependencies]
 radix_trie = "0.0.8"
 rand = "0.3"
+byteorder = "0.4"
 
 [lib]
 

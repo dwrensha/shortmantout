@@ -1,7 +1,10 @@
 extern crate radix_trie;
 extern crate rand;
+extern crate byteorder;
 
 use std::collections::HashMap;
+
+use byteorder::{LittleEndian, ReadBytesExt};
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct BytesTrieKey(Vec<u8>);
@@ -65,7 +68,7 @@ impl State {
         let particle = Particle::new(particle);
         self.score += particle.chars.len();
         self.particles.push(particle);
-        let idx = self.particles.len();
+        let idx = self.particles.len() - 1;
         self.unconnected_on_right.push(idx);
         self.starticle_idx = idx;
     }
@@ -74,7 +77,7 @@ impl State {
         let particle = Particle::new(particle);
         self.score += particle.chars.len();
         self.particles.push(particle);
-        let idx = self.particles.len();
+        let idx = self.particles.len() - 1;
         self.unconnected_on_right.push(idx);
         self.unconnected_on_left.push(idx);
     }
@@ -94,7 +97,6 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         let particle = &state.particles[idx];
         particles_trie.insert(BytesTrieKey(particle.chars.clone()), idx);
     }
-
     'outer: while state.unconnected_on_right.len() > 1 {
 
         let idx = rng.gen_range(0, state.unconnected_on_right.len());
@@ -209,7 +211,14 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     }
 
 
-    let mut rng: rand::XorShiftRng = rand::SeedableRng::from_seed([1,2,3,4]);
+    let mut urandom = try!(::std::fs::File::open("/dev/urandom"));
+    let mut seed: [u32; 4] = [0; 4];
+    for idx in 0..4 {
+        seed[idx] = try!(urandom.read_u32::<LittleEndian>());
+    }
+    println!("seed {:?}", seed);
+
+    let mut rng: rand::XorShiftRng = rand::SeedableRng::from_seed(seed);
 
     coalesce(&mut state, &words_trie, &mut rng);
 

@@ -66,64 +66,58 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     particles_trie.remove(&BytesTrieKey(starticle));
 
     'outer: while particles_trie.len() > 0 {
-        let mut best_padding :Option<Vec<u8>> = None;
-        let mut best_next_particle :Option<Vec<u8>> = None;
-        let mut overlap_word :Option<Vec<u8>> = None;
+        let mut best_padding: Option<Vec<u8>> = None;
+        let mut best_next_particle: Option<Vec<u8>> = None;
+        let mut overlap_word: Option<Vec<u8>> = None;
         'find_best: for suffix_start in (portmantout.len() - 11)..(portmantout.len()) {
             best_padding = None;
             best_next_particle = None;
             let suffix_len = portmantout.len() - suffix_start;
             let suffix = portmantout[suffix_start ..].to_vec();
-            match words_trie.get_descendant(&BytesTrieKey(suffix)) {
-                Some(node) if node.len() > 0 => {
-                    for key in node.keys() {
-                        let word = key.0.clone();
-                        'added: for idx in suffix_len .. word.len() {
-                            let padding_len = idx - suffix_len;
-                            match best_padding {
-                                Some(ref p) if p.len() < padding_len => {
-                                    break 'added;
-                                }
-                                _ => {}
+            if let Some(node) = words_trie.get_descendant(&BytesTrieKey(suffix)) {
+                assert!(node.len() > 0);
+                for key in node.keys() {
+                    let word = key.0.clone();
+                    'added: for idx in suffix_len .. word.len() {
+                        let padding_len = idx - suffix_len;
+                        match best_padding {
+                            Some(ref p) if p.len() < padding_len => {
+                                break 'added;
                             }
-                            match particles_trie.get_descendant(&BytesTrieKey(word[idx..].to_vec())) {
-                                Some(particle_node) if particle_node.len() > 0 => {
-                                    let p = particle_node.keys().next().expect("no key?").0.clone();
-                                    best_padding = Some(word[suffix_len..idx].to_vec());
-                                    best_next_particle = Some(p);
-                                    overlap_word = Some(word.clone());
-                                    if padding_len == 0 {
-                                        break 'find_best;
-                                    }
+                            _ => {}
+                        }
+                        match particles_trie.get_descendant(&BytesTrieKey(word[idx..].to_vec())) {
+                            Some(particle_node) if particle_node.len() > 0 => {
+                                let p = particle_node.keys().next().expect("no key?").0.clone();
+                                best_padding = Some(word[suffix_len..idx].to_vec());
+                                best_next_particle = Some(p);
+                                overlap_word = Some(word.clone());
+                                if padding_len == 0 {
+                                    break 'find_best;
                                 }
-                                _ => {}
                             }
+                            _ => {}
                         }
                     }
                 }
-                _ => {}
             }
         }
-        match (best_next_particle, best_padding) {
-            (Some(particle), Some(padding)) => {
-                println!("next: {:?}, {:?}, {:?}",
-                         ::std::str::from_utf8(&overlap_word.unwrap()),
-                         ::std::str::from_utf8(&padding),
-                         ::std::str::from_utf8(&particle));
-                for idx in 0..padding.len() {
-                    portmantout.push(padding[idx]);
-                }
-                for idx in 0..particle.len() {
-                    portmantout.push(particle[idx]);
-                }
+        if let (Some(particle), Some(padding)) = (best_next_particle, best_padding) {
+            println!("next: {:?}, {:?}, {:?}",
+                     ::std::str::from_utf8(&overlap_word.unwrap()),
+                     ::std::str::from_utf8(&padding),
+                     ::std::str::from_utf8(&particle));
+            for idx in 0..padding.len() {
+                portmantout.push(padding[idx]);
+            }
+            for idx in 0..particle.len() {
+                portmantout.push(particle[idx]);
+            }
 
-                particles_trie.remove(&BytesTrieKey(particle));
-                println!("trie len: {}", particles_trie.len());
-            }
-            (None, None) => {
-                panic!("impossible");
-            }
-            _ => unreachable!(),
+            particles_trie.remove(&BytesTrieKey(particle));
+            println!("trie len: {}", particles_trie.len());
+        } else {
+            unreachable!()
         }
     }
 

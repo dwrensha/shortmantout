@@ -102,7 +102,7 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         let particle = &state.particles[idx];
         particles_trie.insert(BytesTrieKey(particle.chars.clone()), idx);
     }
-    'outer: while state.unconnected_on_right.len() > 1 {
+    'outer: while particles_trie.len() > 0 {
 
         let mut best_padding: Option<Vec<u8>> = None;       // smaller is better
         let mut best_next_particle_idx: Option<usize> = None; // particle that corresponded to the best padding.
@@ -111,18 +111,28 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         let idx = rng.gen_range(0, state.unconnected_on_right.len());
         let particle_idx = state.unconnected_on_right.swap_remove(idx);
 
-        {
+        let chain_start_particle_idx = {
             let particle = &state.particles[particle_idx];
-
-            let chain_start_particle_idx = match particle.prev {
+            match particle.prev {
                 None => particle_idx,
                 Some(ref prev) => prev.chain_start_idx,
-            };
+            }
+        };
 
+        // Special case when we are almost done. We need to choose the starticle chain.
+        if particles_trie.len() == 1 && chain_start_particle_idx != state.starticle_idx {
+            state.unconnected_on_right.push(idx);
+            continue;
+        }
+
+        {
+            let particle = &state.particles[particle_idx];
             let chain_start_particle = &state.particles[chain_start_particle_idx];
             let chain_start_particle_trie_key = BytesTrieKey(chain_start_particle.chars.clone());
             // temporarily remove chain_start_particle from particles_trie, to avoid forming a cycle.
-            particles_trie.remove(&chain_start_particle_trie_key);
+            if chain_start_particle_idx != state.starticle_idx {
+                particles_trie.remove(&chain_start_particle_trie_key);
+            }
 
             let start_idx = particle.chars.len() - ::std::cmp::min(11, particle.chars.len());
 
@@ -161,7 +171,9 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                     }
                 }
             }
-            particles_trie.insert(chain_start_particle_trie_key, chain_start_particle_idx);
+            if chain_start_particle_idx != state.starticle_idx {
+                particles_trie.insert(chain_start_particle_trie_key, chain_start_particle_idx);
+            }
         }
         if let (Some(next_particle_idx),
                 Some(padding),
@@ -222,6 +234,9 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         }
         println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
     }
+
+    println!("particles_trie.len(): {}", particles_trie.len());
+    println!("unconnected_on_right: {:?}", state.unconnected_on_right);
 
     let mut portmantout = Vec::new();
     let mut current_idx = state.starticle_idx;

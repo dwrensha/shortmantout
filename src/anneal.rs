@@ -24,10 +24,15 @@ struct Edge {
     overlap_word: Vec<u8>,
 }
 
+struct Prev {
+    prev_idx: usize,
+    chain_start_idx: usize,
+}
+
 struct Particle {
     chars: Vec<u8>,
     next: Option<Edge>,
-    prev: Option<usize>, // index to
+    prev: Option<Prev>,
 }
 
 impl Particle {
@@ -109,9 +114,15 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         {
             let particle = &state.particles[particle_idx];
 
-            let particle_trie_key = BytesTrieKey(particle.chars.clone());
-            // temporarily remove particle from particles_trie, to avoid forming a cycle.
-            particles_trie.remove(&particle_trie_key);
+            let chain_start_particle_idx = match particle.prev {
+                None => particle_idx,
+                Some(ref prev) => prev.chain_start_idx,
+            };
+
+            let chain_start_particle = &state.particles[chain_start_particle_idx];
+            let chain_start_particle_trie_key = BytesTrieKey(chain_start_particle.chars.clone());
+            // temporarily remove chain_start_particle from particles_trie, to avoid forming a cycle.
+            particles_trie.remove(&chain_start_particle_trie_key);
 
             let start_idx = particle.chars.len() - ::std::cmp::min(11, particle.chars.len());
 
@@ -150,19 +161,15 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                     }
                 }
             }
-            particles_trie.insert(particle_trie_key, particle_idx);
+            particles_trie.insert(chain_start_particle_trie_key, chain_start_particle_idx);
         }
         if let (Some(next_particle_idx),
                 Some(padding),
                 Some(overlap_word)) = (best_next_particle_idx, best_padding, best_overlap_word) {
             state.score += padding.len();
 //            state.unconnected_on_left.swap_remove(next_particle_idx);
-            {
-                let next_particle = &mut state.particles[next_particle_idx];
-                next_particle.prev = Some(particle_idx);
-            }
 
-            {
+            let chain_start_idx = {
                 let particle = &mut state.particles[particle_idx];
                 let edge = Edge {
                     next_idx: next_particle_idx,
@@ -170,7 +177,41 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                     padding: padding,
                 };
                 particle.next = Some(edge);
+
+                match particle.prev {
+                    None => particle_idx,
+                    Some(ref prev) => prev.chain_start_idx,
+                }
+            };
+
+
+            {
+                let next_particle = &mut state.particles[next_particle_idx];
+                let prev = Prev {
+                    prev_idx: particle_idx,
+                    chain_start_idx: chain_start_idx,
+                };
+                next_particle.prev = Some(prev);
             }
+
+            // propagate forward the changes to chain_start_idx.
+            let mut idx = next_particle_idx;
+            loop {
+                let current_particle = &mut state.particles[idx];
+                match current_particle.prev {
+                    None => unreachable!(),
+                    Some(ref mut prev) => {
+                        prev.chain_start_idx = chain_start_idx
+                    }
+                }
+                match current_particle.next {
+                    Some(ref edge) => {
+                        idx = edge.next_idx;
+                    }
+                    None => break,
+                }
+            }
+
 
             {
                 let next_particle = &state.particles[next_particle_idx];
@@ -184,10 +225,20 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
 
     let mut portmantout = Vec::new();
     let mut current_idx = state.starticle_idx;
+    let mut counter = 0;
     loop {
-        println!("current idx: {}", current_idx);
+        counter += 1;
+        if counter > 34000 {
+            panic!("loopy!");
+        }
         let particle = &state.particles[current_idx];
-        println!("particle chars: {:?}", ::std::str::from_utf8(&particle.chars));
+//        println!("particle chars: {:?}", ::std::str::from_utf8(&particle.chars));
+        match particle.prev {
+            None => {}
+            Some(ref prev) => {
+//                println!("chain start idx: {}", prev.chain_start_idx);
+            }
+        }
 
         for &c in &particle.chars {
             portmantout.push(c);
@@ -198,13 +249,14 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                 for &c in &edge.padding {
                     portmantout.push(c);
                 }
-                println!("overlap word: {:?}", ::std::str::from_utf8(&edge.overlap_word));
+                //println!("overlap word: {:?}", ::std::str::from_utf8(&edge.overlap_word));
             }
             None => {
                 break;
             }
         }
     }
+    println!("counter: {}", counter);
     println!("portmanteau: \n\n\n {}", ::std::str::from_utf8(&portmantout[..]).unwrap());
 }
 

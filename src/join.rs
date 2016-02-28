@@ -70,8 +70,6 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
         let mut best_next_particle: Option<Vec<u8>> = None;
         let mut overlap_word: Option<Vec<u8>> = None;
         'find_best: for suffix_start in (portmantout.len() - 11)..(portmantout.len()) {
-            best_padding = None;
-            best_next_particle = None;
             let suffix_len = portmantout.len() - suffix_start;
             let suffix = portmantout[suffix_start ..].to_vec();
             if let Some(node) = words_trie.get_descendant(&BytesTrieKey(suffix)) {

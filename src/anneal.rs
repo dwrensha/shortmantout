@@ -1,7 +1,7 @@
 extern crate radix_trie;
 extern crate rand;
 
-use std::collections::hash_map::HashMap;
+use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct BytesTrieKey(Vec<u8>);
@@ -13,6 +13,7 @@ impl ::radix_trie::TrieKey for BytesTrieKey {
 }
 
 pub type Trie = ::radix_trie::Trie<BytesTrieKey, ()>;
+pub type ParticleTrie = ::radix_trie::Trie<BytesTrieKey, usize>;
 
 struct Edge {
     overlap_word: Vec<u8>,
@@ -40,41 +41,153 @@ struct State {
     pub particles: Vec<Particle>,
     score: usize,
 
-   // Set of indices of base particles unconnected on the right.
+    // Set of indices of base particles unconnected on the right.
+    unconnected_on_right: Vec<usize>,
 
    // Set of indices of base particles unconnected on the left.
+    unconnected_on_left: Vec<usize>,
+
+    starticle_idx: usize,
 }
 
 impl State {
-    fn add_particle(&mut self, particle: Particle) {
+    fn new() -> State {
+        State {
+            particles: Vec::new(),
+            score: 0,
+            unconnected_on_right: Vec::new(),
+            unconnected_on_left: Vec::new(),
+            starticle_idx: 0,
+        }
+    }
+
+    fn add_starticle(&mut self, particle: Vec<u8>) {
+        let particle = Particle::new(particle);
         self.score += particle.chars.len();
         self.particles.push(particle);
+        let idx = self.particles.len();
+        self.unconnected_on_right.push(idx);
+        self.starticle_idx = idx;
     }
+
+    fn add_particle(&mut self, particle: Vec<u8>) {
+        let particle = Particle::new(particle);
+        self.score += particle.chars.len();
+        self.particles.push(particle);
+        let idx = self.particles.len();
+        self.unconnected_on_right.push(idx);
+        self.unconnected_on_left.push(idx);
+    }
+}
+
+fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand::Rng {
+    // first, form a trie containing all of the current chains of particles
+    // then, while the length of unconnected_on_right is greater than 1:
+    // pick a random idx in unconnected on right
+    // connect that particle to one of the existing chains (but not itself!)
+    //  (so temporarily remove self from the particle-chain trie?)
+    //
+    //
+
+    let mut particles_trie = ParticleTrie::new();
+    for &idx in &state.unconnected_on_left {
+        let particle = &state.particles[idx];
+        particles_trie.insert(BytesTrieKey(particle.chars.clone()), idx);
+    }
+
+    'outer: while state.unconnected_on_right.len() > 1 {
+
+        let idx = rng.gen_range(0, state.unconnected_on_right.len());
+        let particle_idx = state.unconnected_on_right.swap_remove(idx);
+        let particle = &state.particles[particle_idx];
+
+        let mut best_padding: Option<Vec<u8>> = None;       // smaller is better
+        let mut best_next_particle_idx: Option<usize> = None; // particle that corresponded to the best padding.
+        let mut overlap_word: Option<Vec<u8>> = None;
+
+        let start_idx = ::std::cmp::max(0, particle.chars.len() - 11);
+
+        'find_best: for suffix_start in start_idx .. particle.chars.len() {
+            let suffix_len = particle.chars.len() - suffix_start;
+            let suffix = particle.chars[suffix_start ..].to_vec();
+            if let Some(node) = words_trie.get_descendant(&BytesTrieKey(suffix)) {
+                assert!(node.len() > 0);
+                // Cool. there is at least one word that starts with `suffix`.
+
+                for key in node.keys() {
+                    let word = key.0.clone();
+                    'added: for idx in suffix_len .. word.len() {
+                        let padding_len = idx - suffix_len;
+                        match best_padding {
+                            Some(ref p) if p.len() < padding_len => {
+                                // We have no chance of doing better than our current best.
+                                break 'added;
+                            }
+                            _ => {}
+                        }
+                        match particles_trie.get_descendant(&BytesTrieKey(word[idx..].to_vec())) {
+                            Some(particle_node) if particle_node.len() > 0 => {
+//                                let p_idx = particle_node.keys().next().expect("no key?").0;
+                                best_padding = Some(word[suffix_len..idx].to_vec());
+//                                best_next_particle_idx = Some(p_idx);
+                                overlap_word = Some(word.clone());
+                                if padding_len == 0 {
+                                    // We're not going to do better than this.
+                                    break 'find_best;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+/*
+        if let (Some(particle), Some(padding)) = (best_next_particle, best_padding) {
+            println!("next: {:?}, {:?}, {:?}",
+                     ::std::str::from_utf8(&overlap_word.unwrap()),
+                     ::std::str::from_utf8(&padding),
+                     ::std::str::from_utf8(&particle));
+            for idx in 0..padding.len() {
+                portmantout.push(padding[idx]);
+            }
+            for idx in 0..particle.len() {
+                portmantout.push(particle[idx]);
+            }
+
+            particles_trie.remove(&BytesTrieKey(particle));
+            println!("trie len: {}", particles_trie.len());
+        } else {
+            unreachable!()
+        }
+             */
+    }
+
 }
 
 fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     use std::io::{BufRead};
 
-    let args : Vec<String> = ::std::env::args().collect();
+    let args: Vec<String> = ::std::env::args().collect();
     if args.len() != 4 {
         println!("usage: {} PARTICLES_FILE JOINERS_FILE WORDLIST_FILE", args[0]);
         return Ok(());
     }
 
+    let mut state = State::new();
 
-    let state = State {
-        particles: Vec::new(),
-        score: 0,
-    };
-
-    let mut particles = Vec::new();
-    let mut particles_trie = Trie::new();
+    let mut found_starticle = false;
     for maybe_word in ::std::io::BufReader::new(try!(::std::fs::File::open(&args[1]))).split('\n' as u8) {
         let word = try!(maybe_word);
-        Particle::new(word.clone());
-        particles.push(word.clone());
-        particles_trie.insert(BytesTrieKey(word), ());
+        if !found_starticle && word.starts_with("portmanteau".as_bytes()) {
+            found_starticle = true;
+            state.add_starticle(word);
+        } else {
+            state.add_particle(word);
+        }
     }
+
+    println!("score: {}, starticle idx: {}", state.score, state.starticle_idx);
 
     let mut words_trie = Trie::new();
 
@@ -96,6 +209,11 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     }
 
 
+    let mut rng: rand::XorShiftRng = rand::SeedableRng::from_seed([1,2,3,4]);
+
+    coalesce(&mut state, &words_trie, &mut rng);
+
+/*
     println!("words in word trie: {}", words_trie.len());
 
     let mut portmantout = Vec::new();
@@ -111,65 +229,10 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
 
     particles_trie.remove(&BytesTrieKey(starticle));
 
-    'outer: while particles_trie.len() > 0 {
-        let mut best_padding: Option<Vec<u8>> = None;
-        let mut best_next_particle: Option<Vec<u8>> = None;
-        let mut overlap_word: Option<Vec<u8>> = None;
-        'find_best: for suffix_start in (portmantout.len() - 11)..(portmantout.len()) {
-            best_padding = None;
-            best_next_particle = None;
-            let suffix_len = portmantout.len() - suffix_start;
-            let suffix = portmantout[suffix_start ..].to_vec();
-            if let Some(node) = words_trie.get_descendant(&BytesTrieKey(suffix)) {
-                assert!(node.len() > 0);
-                for key in node.keys() {
-                    let word = key.0.clone();
-                    'added: for idx in suffix_len .. word.len() {
-                        let padding_len = idx - suffix_len;
-                        match best_padding {
-                            Some(ref p) if p.len() < padding_len => {
-                                break 'added;
-                            }
-                            _ => {}
-                        }
-                        match particles_trie.get_descendant(&BytesTrieKey(word[idx..].to_vec())) {
-                            Some(particle_node) if particle_node.len() > 0 => {
-                                let p = particle_node.keys().next().expect("no key?").0.clone();
-                                best_padding = Some(word[suffix_len..idx].to_vec());
-                                best_next_particle = Some(p);
-                                overlap_word = Some(word.clone());
-                                if padding_len == 0 {
-                                    break 'find_best;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        if let (Some(particle), Some(padding)) = (best_next_particle, best_padding) {
-            println!("next: {:?}, {:?}, {:?}",
-                     ::std::str::from_utf8(&overlap_word.unwrap()),
-                     ::std::str::from_utf8(&padding),
-                     ::std::str::from_utf8(&particle));
-            for idx in 0..padding.len() {
-                portmantout.push(padding[idx]);
-            }
-            for idx in 0..particle.len() {
-                portmantout.push(particle[idx]);
-            }
-
-            particles_trie.remove(&BytesTrieKey(particle));
-            println!("trie len: {}", particles_trie.len());
-        } else {
-            unreachable!()
-        }
-    }
 
     println!("OUTPUT -----");
     println!("{}", ::std::str::from_utf8(&portmantout).unwrap());
-
+*/
     return Ok(());
 }
 

@@ -102,7 +102,7 @@ fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
         let maybe_next_idx = {
             let particle = &mut state.particles[particle_idx];
             if let Some(ref next) = particle.next {
-                if rng.gen_range(0, 100) < 5 {
+                if rng.gen_range(0, 1000) < 17 {
                     // We're going to break this up.
                     state.score -= next.padding.len();
                     Some(next.next_idx)
@@ -328,7 +328,17 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         }
         //println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
     }
+}
 
+fn _accept_new_state<R>(e0: usize, e1: usize, temp: f64, rng: &mut R) -> bool
+    where R: rand::Rng
+{
+    if e1 < e0 {
+        true
+    } else {
+        let p = (-((e1 - e0) as f64) / temp).exp();
+        rng.gen_range(0.0, 1.0) < p
+    }
 }
 
 fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
@@ -397,6 +407,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
             state = new_state;
             try!(write_portmantout(&state));
         }
+
     }
 
     Ok(())

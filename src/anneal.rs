@@ -269,7 +269,7 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                         'added: for idx in suffix_len .. word.len() {
                             let padding_len = idx - suffix_len;
                             match best_padding {
-                                Some(ref p) if p.len() < padding_len => {
+                                Some(ref p) if p.len() <= padding_len => {
                                     // We have no chance of doing better than our current best.
                                     break 'added;
                                 }
@@ -354,7 +354,7 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         } else {
             unreachable!()
         }
-        println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
+        //println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
     }
 }
 

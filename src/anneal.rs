@@ -133,7 +133,7 @@ fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
             // so walk forward to the end.
             let (chain_start_idx, chain_end_idx) = {
                 let mut current_idx = next_idx;
-                let mut chain_start_idx = 0;
+                let chain_start_idx;
                 loop {
                     let particle = &state.particles[current_idx];
                     match particle.next {

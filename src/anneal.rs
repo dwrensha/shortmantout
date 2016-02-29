@@ -92,6 +92,87 @@ impl State {
     }
 }
 
+fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
+    for particle_idx in 0..state.particles.len() {
+        let maybe_next_idx = {
+            let particle = &mut state.particles[particle_idx];
+            if let Some(ref next) = particle.next {
+                if rng.gen_range(0, 100) < 5 {
+                    // We're going to break this up.
+                    state.score -= next.padding.len();
+
+                    state.unconnected_on_right.push(particle_idx);
+                    state.unconnected_on_left.insert(next.next_idx);
+
+                    Some(next.next_idx)
+
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+
+        if let Some(next_idx) = maybe_next_idx {
+            state.particles[next_idx].prev = None;
+            state.particles[particle_idx].next = None;
+
+            let mut current_idx = next_idx;
+            loop {
+                let current_particle = &mut state.particles[current_idx];
+                match current_particle.prev {
+                    Some(ref mut prev) => {
+                        prev.chain_start_idx = next_idx;
+                    }
+                    None => {}
+                }
+                match current_particle.next {
+                    None => break,
+                    Some(ref next) => {
+                        current_idx = next.next_idx;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+fn write_portmantout(state: &State) -> Result<(), ::std::io::Error> {
+    use std::io::Write;
+
+    assert!(state.unconnected_on_left.len() == 0);
+    assert!(state.unconnected_on_right.len() == 1);
+    let filename = format!("{}.txt", state.score);
+    let mut file = try!(::std::fs::File::create(&filename));
+    let mut current_idx = state.starticle_idx;
+    let mut counter = 0;
+    loop {
+        counter += 1;
+        if counter > 34000 {
+            panic!("loopy!");
+        }
+        let particle = &state.particles[current_idx];
+
+        try!(file.write_all(&particle.chars));
+
+        match particle.next {
+            Some(ref edge) => {
+                current_idx = edge.next_idx;
+                try!(file.write_all(&edge.padding));
+                //println!("overlap word: {:?}", ::std::str::from_utf8(&edge.overlap_word));
+            }
+            None => {
+                break;
+            }
+        }
+    }
+    println!("counter: {}", counter);
+    Ok(())
+}
+
 fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand::Rng {
     // first, form a trie containing all of the current chains of particles
     // then, while the length of unconnected_on_right is greater than 1:
@@ -239,44 +320,6 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
     }
 
-    println!("particles_trie.len(): {}", particles_trie.len());
-    println!("unconnected_on_right: {:?}", state.unconnected_on_right);
-
-    let mut portmantout = Vec::new();
-    let mut current_idx = state.starticle_idx;
-    let mut counter = 0;
-    loop {
-        counter += 1;
-        if counter > 34000 {
-            panic!("loopy!");
-        }
-        let particle = &state.particles[current_idx];
-//        println!("particle chars: {:?}", ::std::str::from_utf8(&particle.chars));
-        match particle.prev {
-            None => {}
-            Some(ref prev) => {
-//                println!("chain start idx: {}", prev.chain_start_idx);
-            }
-        }
-
-        for &c in &particle.chars {
-            portmantout.push(c);
-        }
-        match particle.next {
-            Some(ref edge) => {
-                current_idx = edge.next_idx;
-                for &c in &edge.padding {
-                    portmantout.push(c);
-                }
-                //println!("overlap word: {:?}", ::std::str::from_utf8(&edge.overlap_word));
-            }
-            None => {
-                break;
-            }
-        }
-    }
-    println!("counter: {}", counter);
-    println!("portmanteau: \n\n\n {}", ::std::str::from_utf8(&portmantout[..]).unwrap());
 }
 
 fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
@@ -333,28 +376,21 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     let mut rng: rand::XorShiftRng = rand::SeedableRng::from_seed(seed);
 
     coalesce(&mut state, &words_trie, &mut rng);
+    try!(write_portmantout(&state));
 
-/*
-    println!("words in word trie: {}", words_trie.len());
+    loop {
+        let mut new_state = state.clone();
+        break_chains(&mut new_state, &mut rng);
+        coalesce(&mut new_state, &words_trie, &mut rng);
 
-    let mut portmantout = Vec::new();
-
-    let key = BytesTrieKey("portmanteau".as_bytes().to_vec());
-    let starticle = particles_trie.get_descendant(&key).and_then(|node| {node.keys().next()})
-        .expect("no particle starts with 'portmanteau'?").0.clone();
-
-
-    for c in &starticle {
-        portmantout.push(*c);
+        println!("new state's score: {}", new_state.score);
+        if new_state.score < state.score {
+            state = new_state;
+            try!(write_portmantout(&state));
+        }
     }
 
-    particles_trie.remove(&BytesTrieKey(starticle));
-
-
-    println!("OUTPUT -----");
-    println!("{}", ::std::str::from_utf8(&portmantout).unwrap());
-*/
-    return Ok(());
+    Ok(())
 }
 
 pub fn main() {

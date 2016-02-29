@@ -19,10 +19,24 @@ pub type Trie = ::radix_trie::Trie<BytesTrieKey, ()>;
 pub type ParticleTrie = ::radix_trie::Trie<BytesTrieKey, usize>;
 
 #[derive(Clone)]
+enum Edge {
+    Overlapped(usize),
+    Padded { padding: Vec<u8>, overlap_word: Vec<u8> },
+}
+
+impl Edge {
+    fn score(&self) -> isize {
+        match *self {
+            Edge::Overlapped(n) => -(n as isize),
+            Edge::Padded { ref padding, .. } => padding.len() as isize,
+        }
+    }
+}
+
+#[derive(Clone)]
 struct Next {
     next_idx: usize,
-    padding: Vec<u8>,
-    overlap_word: Vec<u8>,
+    edge: Edge,
 }
 
 #[derive(Clone, Debug)]
@@ -60,7 +74,7 @@ impl Particle {
 #[derive(Clone)]
 struct State {
     pub particles: Vec<Particle>,
-    score: usize,
+    score: isize,
 
     // Set of indices of base particles unconnected on the right.
     unconnected_on_right: Vec<usize>,
@@ -85,7 +99,7 @@ impl State {
     fn add_starticle(&mut self, particle: Vec<u8>) {
         let idx = self.particles.len();
         let particle = Particle::new(particle, idx);
-        self.score += particle.chars.len();
+        self.score += particle.chars.len() as isize;
         self.particles.push(particle);
         self.unconnected_on_right.push(idx);
         self.starticle_idx = idx;
@@ -94,7 +108,7 @@ impl State {
     fn add_particle(&mut self, particle: Vec<u8>) {
         let idx = self.particles.len();
         let particle = Particle::new(particle, idx);
-        self.score += particle.chars.len();
+        self.score += particle.chars.len() as isize;
         self.particles.push(particle);
         self.unconnected_on_right.push(idx);
         self.unconnected_on_left.insert(idx);
@@ -111,9 +125,9 @@ fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
         let maybe_next_idx = {
             let particle = &mut state.particles[particle_idx];
             if let Ok(ref next) = particle.next {
-                if rng.gen_range(0, 1000) < 17 {
+                if rng.gen_range(0, 10000) < 7 {
                     // We're going to break this up.
-                    state.score -= next.padding.len();
+                    state.score -= next.edge.score();
                     Some(next.next_idx)
                 } else {
                     None
@@ -189,26 +203,108 @@ fn write_portmantout(state: &State) -> Result<(), ::std::io::Error> {
     let mut counter = 0;
     loop {
         counter += 1;
-        if counter > 34000 {
+        if counter > 150000 {
             panic!("loopy!");
         }
         let particle = &state.particles[current_idx];
 
-        try!(file.write_all(&particle.chars));
-
         match particle.next {
-            Ok(ref edge) => {
-                current_idx = edge.next_idx;
-                try!(file.write_all(&edge.padding));
+            Ok(ref next) => {
+                current_idx = next.next_idx;
+                match next.edge {
+                    Edge::Padded { ref padding, .. } => {
+                        try!(file.write_all(&particle.chars));
+                        try!(file.write_all(padding));
+                    }
+                    Edge::Overlapped(ref n) => {
+                        let n = *n;
+                        assert!(particle.chars.len() >= n);
+                        let write_len = particle.chars.len() - n;
+                        try!(file.write_all(&particle.chars[.. write_len]));
+                    }
+                }
+
                 //println!("overlap word: {:?}", ::std::str::from_utf8(&edge.overlap_word));
             }
             Err(_) => {
+                try!(file.write_all(&particle.chars));
                 break;
             }
         }
     }
     Ok(())
 }
+
+fn find_next(state: &State, words_trie: &Trie,
+             particle: &Particle, particles_trie: &ParticleTrie) -> Next {
+    // first try for an overlapped edge.
+    for start_idx in (particle.chars.len() - 3) .. particle.chars.len() {
+        let overlap = &particle.chars[start_idx..];
+        if let Some(node) = particles_trie.get_descendant(&BytesTrieKey(overlap.to_vec())) {
+            assert!(node.len() > 0);
+            let (_, &p_idx) = node.iter().next().expect("no value?");
+            return Next {
+                next_idx: p_idx,
+                edge: Edge::Overlapped(overlap.len()),
+            };
+        }
+    }
+
+    // okay, we can't get any overlap.
+
+    let mut best_padding: Option<Vec<u8>> = None;       // smaller is better
+    let mut best_next_particle_idx: Option<usize> = None; // particle that corresponded to the best padding.
+    let mut best_overlap_word: Option<Vec<u8>> = None;
+
+    let start_idx = particle.chars.len() - ::std::cmp::min(11, particle.chars.len());
+
+    'find_best: for suffix_start in start_idx .. particle.chars.len() {
+        let suffix_len = particle.chars.len() - suffix_start;
+        let suffix = particle.chars[suffix_start ..].to_vec();
+        if let Some(node) = words_trie.get_descendant(&BytesTrieKey(suffix)) {
+            assert!(node.len() > 0);
+            // Cool. there is at least one word that starts with `suffix`.
+
+            for key in node.keys() {
+                let word = key.0.clone();
+                'added: for idx in suffix_len .. word.len() {
+                    let padding_len = idx - suffix_len;
+                    match best_padding {
+                        Some(ref p) if p.len() <= padding_len => {
+                            // We have no chance of doing better than our current best.
+                            break 'added;
+                        }
+                        _ => {}
+                    }
+                    match particles_trie.get_descendant(&BytesTrieKey(word[idx..].to_vec())) {
+                        Some(particle_node) if particle_node.len() > 0 => {
+                            let (_, &p_idx) = particle_node.iter().next().expect("no value?");
+                            best_padding = Some(word[suffix_len..idx].to_vec());
+                            best_next_particle_idx = Some(p_idx);
+                            best_overlap_word = Some(word.clone());
+                            if padding_len == 0 {
+                                // We're not going to do better than this.
+                                break 'find_best;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    if let (Some(next_particle_idx),
+            Some(padding),
+            Some(overlap_word)) = (best_next_particle_idx, best_padding, best_overlap_word) {
+        return Next {
+            next_idx: next_particle_idx,
+            edge: Edge::Padded { padding: padding, overlap_word: overlap_word },
+        }
+    } else {
+        unreachable!()
+    }
+}
+
 
 fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand::Rng {
     // first, form a trie containing all of the current chains of particles
@@ -228,10 +324,6 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
 
         state.sanity_check();
 
-        let mut best_padding: Option<Vec<u8>> = None;       // smaller is better
-        let mut best_next_particle_idx: Option<usize> = None; // particle that corresponded to the best padding.
-        let mut best_overlap_word: Option<Vec<u8>> = None;
-
         let idx = rng.gen_range(0, state.unconnected_on_right.len());
         let particle_idx = state.unconnected_on_right.swap_remove(idx);
 
@@ -246,7 +338,8 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
             continue;
         }
 
-        {
+
+        let best_next = {
             let particle = &state.particles[particle_idx];
             let chain_start_particle = &state.particles[chain_start_particle_idx];
             let chain_start_particle_trie_key = BytesTrieKey(chain_start_particle.chars.clone());
@@ -255,106 +348,66 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                 particles_trie.remove(&chain_start_particle_trie_key);
             }
 
-            let start_idx = particle.chars.len() - ::std::cmp::min(11, particle.chars.len());
+            let best_next = find_next(state, words_trie, particle, &particles_trie);
 
-            'find_best: for suffix_start in start_idx .. particle.chars.len() {
-                let suffix_len = particle.chars.len() - suffix_start;
-                let suffix = particle.chars[suffix_start ..].to_vec();
-                if let Some(node) = words_trie.get_descendant(&BytesTrieKey(suffix)) {
-                    assert!(node.len() > 0);
-                    // Cool. there is at least one word that starts with `suffix`.
-
-                    for key in node.keys() {
-                        let word = key.0.clone();
-                        'added: for idx in suffix_len .. word.len() {
-                            let padding_len = idx - suffix_len;
-                            match best_padding {
-                                Some(ref p) if p.len() <= padding_len => {
-                                    // We have no chance of doing better than our current best.
-                                    break 'added;
-                                }
-                                _ => {}
-                            }
-                            match particles_trie.get_descendant(&BytesTrieKey(word[idx..].to_vec())) {
-                                Some(particle_node) if particle_node.len() > 0 => {
-                                    let (_, &p_idx) = particle_node.iter().next().expect("no value?");
-                                    best_padding = Some(word[suffix_len..idx].to_vec());
-                                    best_next_particle_idx = Some(p_idx);
-                                    best_overlap_word = Some(word.clone());
-                                    if padding_len == 0 {
-                                        // We're not going to do better than this.
-                                        break 'find_best;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
             if chain_start_particle_idx != state.starticle_idx {
                 particles_trie.insert(chain_start_particle_trie_key, chain_start_particle_idx);
             }
+
+            best_next
+        };
+
+        state.score += best_next.edge.score();
+        let next_particle_idx = best_next.next_idx;
+        assert!(state.unconnected_on_left.remove(&next_particle_idx));
+
+        {
+            let particle = &mut state.particles[particle_idx];
+            particle.next = Ok(best_next);
         }
-        if let (Some(next_particle_idx),
-                Some(padding),
-                Some(overlap_word)) = (best_next_particle_idx, best_padding, best_overlap_word) {
-            state.score += padding.len();
-            assert!(state.unconnected_on_left.remove(&next_particle_idx));
 
-            {
-                let particle = &mut state.particles[particle_idx];
-                let next = Next {
-                    next_idx: next_particle_idx,
-                    overlap_word: overlap_word,
-                    padding: padding,
-                };
-                particle.next = Ok(next);
-            }
-
-            let chain_end_particle_idx = {
-                let next_particle = &mut state.particles[next_particle_idx];
-                let chain_end_particle_idx = match next_particle.prev {
-                    Ok(_) => unreachable!(),
-                    Err(ref no_prev) => {
-                        no_prev.chain_end_idx
-                    }
-                };
-                next_particle.prev = Ok(Prev { prev_idx: particle_idx, });
-                chain_end_particle_idx
+        let chain_end_particle_idx = {
+            let next_particle = &mut state.particles[next_particle_idx];
+            let chain_end_particle_idx = match next_particle.prev {
+                Ok(_) => unreachable!(),
+                Err(ref no_prev) => {
+                    no_prev.chain_end_idx
+                }
             };
+            next_particle.prev = Ok(Prev { prev_idx: particle_idx, });
+            chain_end_particle_idx
+        };
 
-            // Now, update the chain_end_idx at the chain start,
+        // Now, update the chain_end_idx at the chain start,
 
-            {
-                let chain_start = &mut state.particles[chain_start_particle_idx];
-                match chain_start.prev {
-                    Ok(_) => unreachable!(),
-                    Err(ref mut no_prev) => {
-                        no_prev.chain_end_idx = chain_end_particle_idx;
-                    }
+        {
+            let chain_start = &mut state.particles[chain_start_particle_idx];
+            match chain_start.prev {
+                Ok(_) => unreachable!(),
+                Err(ref mut no_prev) => {
+                    no_prev.chain_end_idx = chain_end_particle_idx;
                 }
             }
-
-            // and update the chain_start_idx at the chain end.
-            {
-                let chain_end = &mut state.particles[chain_end_particle_idx];
-                match chain_end.next {
-                    Ok(_) => unreachable!(),
-                    Err(ref mut no_next) => {
-                        no_next.chain_start_idx = chain_start_particle_idx;
-                    }
-                }
-            }
-
-            {
-                let next_particle = &state.particles[next_particle_idx];
-                particles_trie.remove(&BytesTrieKey(next_particle.chars.clone()));
-            }
-        } else {
-            unreachable!()
         }
-        //println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
+
+        // and update the chain_start_idx at the chain end.
+        {
+            let chain_end = &mut state.particles[chain_end_particle_idx];
+            match chain_end.next {
+                Ok(_) => unreachable!(),
+                Err(ref mut no_next) => {
+                    no_next.chain_start_idx = chain_start_particle_idx;
+                }
+            }
+        }
+
+        {
+            let next_particle = &state.particles[next_particle_idx];
+            particles_trie.remove(&BytesTrieKey(next_particle.chars.clone()));
+        }
+        if 0 == (state.unconnected_on_right.len() % 100) {
+            println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
+        }
     }
 }
 

@@ -25,25 +25,34 @@ struct Next {
     overlap_word: Vec<u8>,
 }
 
+#[derive(Clone, Debug)]
+struct NoNext {
+    chain_start_idx: usize,
+}
+
 #[derive(Clone)]
 struct Prev {
     prev_idx: usize,
-    chain_start_idx: usize,
+}
+
+#[derive(Clone)]
+struct NoPrev {
+    chain_end_idx: usize,
 }
 
 #[derive(Clone)]
 struct Particle {
     chars: Vec<u8>,
-    next: Option<Next>,
-    prev: Option<Prev>,
+    next: Result<Next, NoNext>,
+    prev: Result<Prev, NoPrev>,
 }
 
 impl Particle {
-    fn new(chars: Vec<u8>) -> Particle {
+    fn new(chars: Vec<u8>, idx: usize) -> Particle {
         Particle {
             chars: chars,
-            next: None,
-            prev: None,
+            next: Err(NoNext {chain_start_idx: idx}),
+            prev: Err(NoPrev {chain_end_idx: idx}),
         }
     }
 }
@@ -74,19 +83,19 @@ impl State {
     }
 
     fn add_starticle(&mut self, particle: Vec<u8>) {
-        let particle = Particle::new(particle);
+        let idx = self.particles.len();
+        let particle = Particle::new(particle, idx);
         self.score += particle.chars.len();
         self.particles.push(particle);
-        let idx = self.particles.len() - 1;
         self.unconnected_on_right.push(idx);
         self.starticle_idx = idx;
     }
 
     fn add_particle(&mut self, particle: Vec<u8>) {
-        let particle = Particle::new(particle);
+        let idx = self.particles.len();
+        let particle = Particle::new(particle, idx);
         self.score += particle.chars.len();
         self.particles.push(particle);
-        let idx = self.particles.len() - 1;
         self.unconnected_on_right.push(idx);
         self.unconnected_on_left.insert(idx);
     }
@@ -101,7 +110,7 @@ fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
         state.sanity_check();
         let maybe_next_idx = {
             let particle = &mut state.particles[particle_idx];
-            if let Some(ref next) = particle.next {
+            if let Ok(ref next) = particle.next {
                 if rng.gen_range(0, 1000) < 17 {
                     // We're going to break this up.
                     state.score -= next.padding.len();
@@ -120,25 +129,50 @@ fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
             state.unconnected_on_right.push(particle_idx);
             state.unconnected_on_left.insert(next_idx);
 
-            state.particles[next_idx].prev = None;
-            state.particles[particle_idx].next = None;
-
-            let mut current_idx = next_idx;
-            loop {
-                let current_particle = &mut state.particles[current_idx];
-                match current_particle.prev {
-                    Some(ref mut prev) => {
-                        prev.chain_start_idx = next_idx;
+            // need to figure out the start and the end of the chain.
+            // so walk forward to the end.
+            let (chain_start_idx, chain_end_idx) = {
+                let mut current_idx = next_idx;
+                let mut chain_start_idx = 0;
+                loop {
+                    let particle = &state.particles[current_idx];
+                    match particle.next {
+                        Ok(ref next) => {
+                            current_idx = next.next_idx;
+                        }
+                        Err(ref no_next) => {
+                            chain_start_idx = no_next.chain_start_idx;
+                            break;
+                        }
                     }
-                    None => {}
                 }
-                match current_particle.next {
-                    None => break,
-                    Some(ref next) => {
-                        current_idx = next.next_idx;
+                (chain_start_idx, current_idx)
+            };
+
+            {
+                let chain_start = &mut state.particles[chain_start_idx];
+                match chain_start.prev {
+                    Ok(_) => unreachable!(),
+                    Err(ref mut no_prev) => {
+                        no_prev.chain_end_idx = particle_idx;
                     }
                 }
             }
+
+            {
+                let chain_end = &mut state.particles[chain_end_idx];
+                match chain_end.next {
+                    Ok(_) => unreachable!(),
+                    Err(ref mut no_next) => {
+                        no_next.chain_start_idx = next_idx;
+                    }
+                }
+            }
+
+
+            state.particles[next_idx].prev = Err(NoPrev {chain_end_idx: chain_end_idx});
+            state.particles[particle_idx].next = Err(NoNext {chain_start_idx: chain_start_idx});
+
         }
     }
 }
@@ -163,12 +197,12 @@ fn write_portmantout(state: &State) -> Result<(), ::std::io::Error> {
         try!(file.write_all(&particle.chars));
 
         match particle.next {
-            Some(ref edge) => {
+            Ok(ref edge) => {
                 current_idx = edge.next_idx;
                 try!(file.write_all(&edge.padding));
                 //println!("overlap word: {:?}", ::std::str::from_utf8(&edge.overlap_word));
             }
-            None => {
+            Err(_) => {
                 break;
             }
         }
@@ -201,12 +235,9 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         let idx = rng.gen_range(0, state.unconnected_on_right.len());
         let particle_idx = state.unconnected_on_right.swap_remove(idx);
 
-        let chain_start_particle_idx = {
-            let particle = &state.particles[particle_idx];
-            match particle.prev {
-                None => particle_idx,
-                Some(ref prev) => prev.chain_start_idx,
-            }
+        let chain_start_particle_idx = match state.particles[particle_idx].next {
+            Ok(_) => unreachable!(),
+            Err(ref no_next) => no_next.chain_start_idx,
         };
 
         // Special case when we are almost done. We need to choose the starticle chain.
@@ -271,51 +302,48 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
             state.score += padding.len();
             assert!(state.unconnected_on_left.remove(&next_particle_idx));
 
-            let chain_start_idx = {
+            {
                 let particle = &mut state.particles[particle_idx];
-                let edge = Next {
+                let next = Next {
                     next_idx: next_particle_idx,
                     overlap_word: overlap_word,
                     padding: padding,
                 };
-                particle.next = Some(edge);
-
-                match particle.prev {
-                    None => particle_idx,
-                    Some(ref prev) => prev.chain_start_idx,
-                }
-            };
-
-
-            {
-                let next_particle = &mut state.particles[next_particle_idx];
-                let prev = Prev {
-                    prev_idx: particle_idx,
-                    chain_start_idx: chain_start_idx,
-                };
-                next_particle.prev = Some(prev);
+                particle.next = Ok(next);
             }
 
-            // propagate forward the changes to chain_start_idx.
-            let mut idx = next_particle_idx;
-            let mut counter = 0;
-            loop {
-                counter += 1;
-                if counter > 34000 {
-                    panic!("counting too high");
-                }
-                let current_particle = &mut state.particles[idx];
-                match current_particle.prev {
-                    None => unreachable!(),
-                    Some(ref mut prev) => {
-                        prev.chain_start_idx = chain_start_idx
+            let chain_end_particle_idx = {
+                let next_particle = &mut state.particles[next_particle_idx];
+                let chain_end_particle_idx = match next_particle.prev {
+                    Ok(_) => unreachable!(),
+                    Err(ref no_prev) => {
+                        no_prev.chain_end_idx
+                    }
+                };
+                next_particle.prev = Ok(Prev { prev_idx: particle_idx, });
+                chain_end_particle_idx
+            };
+
+            // Now, update the chain_end_idx at the chain start,
+
+            {
+                let chain_start = &mut state.particles[chain_start_particle_idx];
+                match chain_start.prev {
+                    Ok(_) => unreachable!(),
+                    Err(ref mut no_prev) => {
+                        no_prev.chain_end_idx = chain_end_particle_idx;
                     }
                 }
-                match current_particle.next {
-                    Some(ref edge) => {
-                        idx = edge.next_idx;
+            }
+
+            // and update the chain_start_idx at the chain end.
+            {
+                let chain_end = &mut state.particles[chain_end_particle_idx];
+                match chain_end.next {
+                    Ok(_) => unreachable!(),
+                    Err(ref mut no_next) => {
+                        no_next.chain_start_idx = chain_start_particle_idx;
                     }
-                    None => break,
                 }
             }
 
@@ -326,7 +354,7 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         } else {
             unreachable!()
         }
-        //println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
+        println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
     }
 }
 

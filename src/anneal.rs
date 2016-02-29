@@ -90,22 +90,22 @@ impl State {
         self.unconnected_on_right.push(idx);
         self.unconnected_on_left.insert(idx);
     }
+
+    fn sanity_check(&self) {
+        assert_eq!(self.unconnected_on_right.len(), self.unconnected_on_left.len() + 1);
+    }
 }
 
 fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
     for particle_idx in 0..state.particles.len() {
+        state.sanity_check();
         let maybe_next_idx = {
             let particle = &mut state.particles[particle_idx];
             if let Some(ref next) = particle.next {
                 if rng.gen_range(0, 100) < 5 {
                     // We're going to break this up.
                     state.score -= next.padding.len();
-
-                    state.unconnected_on_right.push(particle_idx);
-                    state.unconnected_on_left.insert(next.next_idx);
-
                     Some(next.next_idx)
-
                 } else {
                     None
                 }
@@ -116,6 +116,10 @@ fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
 
 
         if let Some(next_idx) = maybe_next_idx {
+
+            state.unconnected_on_right.push(particle_idx);
+            state.unconnected_on_left.insert(next_idx);
+
             state.particles[next_idx].prev = None;
             state.particles[particle_idx].next = None;
 
@@ -145,7 +149,7 @@ fn write_portmantout(state: &State) -> Result<(), ::std::io::Error> {
 
     assert!(state.unconnected_on_left.len() == 0);
     assert!(state.unconnected_on_right.len() == 1);
-    let filename = format!("{}.txt", state.score);
+    let filename = format!("out/{}.txt", state.score);
     let mut file = try!(::std::fs::File::create(&filename));
     let mut current_idx = state.starticle_idx;
     let mut counter = 0;
@@ -169,7 +173,6 @@ fn write_portmantout(state: &State) -> Result<(), ::std::io::Error> {
             }
         }
     }
-    println!("counter: {}", counter);
     Ok(())
 }
 
@@ -189,6 +192,8 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
     }
     'outer: while particles_trie.len() > 0 {
 
+        state.sanity_check();
+
         let mut best_padding: Option<Vec<u8>> = None;       // smaller is better
         let mut best_next_particle_idx: Option<usize> = None; // particle that corresponded to the best padding.
         let mut best_overlap_word: Option<Vec<u8>> = None;
@@ -206,7 +211,7 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
 
         // Special case when we are almost done. We need to choose the starticle chain.
         if particles_trie.len() == 1 && chain_start_particle_idx != state.starticle_idx {
-            state.unconnected_on_right.push(idx);
+            state.unconnected_on_right.push(particle_idx);
             continue;
         }
 
@@ -241,7 +246,7 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                             }
                             match particles_trie.get_descendant(&BytesTrieKey(word[idx..].to_vec())) {
                                 Some(particle_node) if particle_node.len() > 0 => {
-                                    let &p_idx = particle_node.values().next().expect("no key?");
+                                    let (_, &p_idx) = particle_node.iter().next().expect("no value?");
                                     best_padding = Some(word[suffix_len..idx].to_vec());
                                     best_next_particle_idx = Some(p_idx);
                                     best_overlap_word = Some(word.clone());
@@ -264,7 +269,7 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                 Some(padding),
                 Some(overlap_word)) = (best_next_particle_idx, best_padding, best_overlap_word) {
             state.score += padding.len();
-            state.unconnected_on_left.remove(&next_particle_idx);
+            assert!(state.unconnected_on_left.remove(&next_particle_idx));
 
             let chain_start_idx = {
                 let particle = &mut state.particles[particle_idx];
@@ -293,7 +298,12 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
 
             // propagate forward the changes to chain_start_idx.
             let mut idx = next_particle_idx;
+            let mut counter = 0;
             loop {
+                counter += 1;
+                if counter > 34000 {
+                    panic!("counting too high");
+                }
                 let current_particle = &mut state.particles[idx];
                 match current_particle.prev {
                     None => unreachable!(),

@@ -2,7 +2,7 @@ extern crate radix_trie;
 extern crate rand;
 extern crate byteorder;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -18,20 +18,23 @@ impl ::radix_trie::TrieKey for BytesTrieKey {
 pub type Trie = ::radix_trie::Trie<BytesTrieKey, ()>;
 pub type ParticleTrie = ::radix_trie::Trie<BytesTrieKey, usize>;
 
-struct Edge {
+#[derive(Clone)]
+struct Next {
     next_idx: usize,
     padding: Vec<u8>,
     overlap_word: Vec<u8>,
 }
 
+#[derive(Clone)]
 struct Prev {
     prev_idx: usize,
     chain_start_idx: usize,
 }
 
+#[derive(Clone)]
 struct Particle {
     chars: Vec<u8>,
-    next: Option<Edge>,
+    next: Option<Next>,
     prev: Option<Prev>,
 }
 
@@ -45,6 +48,7 @@ impl Particle {
     }
 }
 
+#[derive(Clone)]
 struct State {
     pub particles: Vec<Particle>,
     score: usize,
@@ -53,7 +57,7 @@ struct State {
     unconnected_on_right: Vec<usize>,
 
    // Set of indices of base particles unconnected on the left.
-    unconnected_on_left: Vec<usize>,
+    unconnected_on_left: HashSet<usize>,
 
     starticle_idx: usize,
 }
@@ -64,7 +68,7 @@ impl State {
             particles: Vec::new(),
             score: 0,
             unconnected_on_right: Vec::new(),
-            unconnected_on_left: Vec::new(),
+            unconnected_on_left: HashSet::new(),
             starticle_idx: 0,
         }
     }
@@ -84,7 +88,7 @@ impl State {
         self.particles.push(particle);
         let idx = self.particles.len() - 1;
         self.unconnected_on_right.push(idx);
-        self.unconnected_on_left.push(idx);
+        self.unconnected_on_left.insert(idx);
     }
 }
 
@@ -179,11 +183,11 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                 Some(padding),
                 Some(overlap_word)) = (best_next_particle_idx, best_padding, best_overlap_word) {
             state.score += padding.len();
-//            state.unconnected_on_left.swap_remove(next_particle_idx);
+            state.unconnected_on_left.remove(&next_particle_idx);
 
             let chain_start_idx = {
                 let particle = &mut state.particles[particle_idx];
-                let edge = Edge {
+                let edge = Next {
                     next_idx: next_particle_idx,
                     overlap_word: overlap_word,
                     padding: padding,

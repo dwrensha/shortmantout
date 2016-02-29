@@ -319,7 +319,6 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
                 }
             }
 
-
             {
                 let next_particle = &state.particles[next_particle_idx];
                 particles_trie.remove(&BytesTrieKey(next_particle.chars.clone()));
@@ -327,7 +326,7 @@ fn coalesce<R>(state: &mut State, words_trie: &Trie, rng: &mut R) where R: rand:
         } else {
             unreachable!()
         }
-        println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
+        //println!("left: {}. score: {}", state.unconnected_on_right.len(), state.score);
     }
 
 }

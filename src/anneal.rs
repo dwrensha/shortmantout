@@ -96,6 +96,49 @@ impl State {
         }
     }
 
+    fn from_particle_file<P>(path: P) -> ::std::io::Result<State>
+        where P: AsRef<::std::path::Path>
+    {
+        use std::io::{BufRead};
+        let mut result = State::new();
+        let mut found_starticle = false;
+        for maybe_word in ::std::io::BufReader::new(try!(::std::fs::File::open(path))).split('\n' as u8) {
+            let word = try!(maybe_word);
+            if !found_starticle && word.starts_with("portmanteau".as_bytes()) {
+                found_starticle = true;
+                result.add_starticle(word);
+            } else {
+                result.add_particle(word);
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn resume<P>(&mut self, path: P) -> ::std::io::Result<()>
+        where P: AsRef<::std::path::Path>
+    {
+        use std::io::{Read};
+        let mut portmantout = Vec::new();
+        try!(try!(::std::fs::File::open(path)).read_to_end(&mut portmantout));
+        // Get rid of any trailing whitespace.
+        while (portmantout[portmantout.len() - 1] as char).is_whitespace() {
+            portmantout.pop();
+        }
+
+        // find the index of each particle.
+
+        let mut start_indices = vec![0usize; self.particles.len()];
+
+        for particle_idx in 0 .. self.particles.len() {
+            let particle = &self.particles[particle_idx].chars;
+            // ...
+        }
+        // use a binary heap...
+
+        unimplemented!()
+    }
+
     fn add_starticle(&mut self, particle: Vec<u8>) {
         let idx = self.particles.len();
         let particle = Particle::new(particle, idx);
@@ -422,22 +465,15 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     use std::io::{BufRead};
 
     let args: Vec<String> = ::std::env::args().collect();
-    if args.len() != 4 {
-        println!("usage: {} PARTICLES_FILE JOINERS_FILE WORDLIST_FILE", args[0]);
+    if args.len() < 4 || args.len() > 5 {
+        println!("usage: {} PARTICLES_FILE JOINERS_FILE WORDLIST_FILE [PORTMANTOUT_FILE]", args[0]);
         return Ok(());
     }
 
-    let mut state = State::new();
+    let mut state = try!(State::from_particle_file(&args[1]));
 
-    let mut found_starticle = false;
-    for maybe_word in ::std::io::BufReader::new(try!(::std::fs::File::open(&args[1]))).split('\n' as u8) {
-        let word = try!(maybe_word);
-        if !found_starticle && word.starts_with("portmanteau".as_bytes()) {
-            found_starticle = true;
-            state.add_starticle(word);
-        } else {
-            state.add_particle(word);
-        }
+    if args.len() == 5 {
+        try!(state.resume(&args[4]));
     }
 
     println!("score: {}, starticle idx: {}", state.score, state.starticle_idx);

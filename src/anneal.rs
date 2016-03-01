@@ -479,10 +479,12 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
         break_chains(&mut new_state, &mut rng);
         coalesce(&mut new_state, &words_trie, &mut rng);
 
-        println!("new state's score: {}", new_state.score);
         if new_state.score < state.score {
             state = new_state;
+            println!("new best score: {}", state.score);
             try!(write_portmantout(&state));
+        } else {
+            print!(".");
         }
 
     }

@@ -128,13 +128,23 @@ impl State {
 
         // find the index of each particle.
 
-        let mut start_indices = vec![0usize; self.particles.len()];
+        let mut start_indices = vec![None; self.particles.len()];
 
+        // hmm... using a trie might be better...
         for particle_idx in 0 .. self.particles.len() {
             let particle = &self.particles[particle_idx].chars;
             // ...
+            'search: for idx in 0 .. portmantout.len() {
+                for char_idx in 0 .. particle.len() {
+                    if particle[char_idx] != portmantout[idx + char_idx] {
+                        continue 'search;
+                    }
+                }
+                // we found a match!
+                start_indices[particle_idx] = Some(idx);
+            }
         }
-        // use a binary heap...
+
 
         unimplemented!()
     }

@@ -21,7 +21,7 @@ pub type ParticleTrie = ::radix_trie::Trie<BytesTrieKey, usize>;
 #[derive(Clone)]
 enum Edge {
     Overlapped(usize),
-    Padded { padding: Vec<u8>, overlap_word: Vec<u8> },
+    Padded { padding: Vec<u8> },
 }
 
 impl Edge {
@@ -254,7 +254,6 @@ fn find_next(state: &State, words_trie: &Trie,
 
     let mut best_padding: Option<Vec<u8>> = None;       // smaller is better
     let mut best_next_particle_idx: Option<usize> = None; // particle that corresponded to the best padding.
-    let mut best_overlap_word: Option<Vec<u8>> = None;
 
     let start_idx = particle.chars.len() - ::std::cmp::min(11, particle.chars.len());
 
@@ -281,7 +280,6 @@ fn find_next(state: &State, words_trie: &Trie,
                             let (_, &p_idx) = particle_node.iter().next().expect("no value?");
                             best_padding = Some(word[suffix_len..idx].to_vec());
                             best_next_particle_idx = Some(p_idx);
-                            best_overlap_word = Some(word.clone());
                             if padding_len == 0 {
                                 // We're not going to do better than this.
                                 break 'find_best;
@@ -293,12 +291,10 @@ fn find_next(state: &State, words_trie: &Trie,
             }
         }
     }
-    if let (Some(next_particle_idx),
-            Some(padding),
-            Some(overlap_word)) = (best_next_particle_idx, best_padding, best_overlap_word) {
+    if let (Some(next_particle_idx), Some(padding)) = (best_next_particle_idx, best_padding) {
         return Next {
             next_idx: next_particle_idx,
-            edge: Edge::Padded { padding: padding, overlap_word: overlap_word },
+            edge: Edge::Padded { padding: padding },
         }
     } else {
         unreachable!()

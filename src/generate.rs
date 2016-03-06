@@ -18,7 +18,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
 
     let args : Vec<String> = ::std::env::args().collect();
     if args.len() != 2 {
-        println!("usage: {} NORMALIZED_WORDLIST_FILE", args[0]);
+        println!("usage: {} REDUCED_WORDLIST_FILE", args[0]);
         return Ok(());
     }
 

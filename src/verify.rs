@@ -130,7 +130,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
 
     let args : Vec<String> = ::std::env::args().collect();
     if args.len() != 4 {
-        println!("usage: {} PORTMANTOUT_FILE WORDLIST_FILE NORMALIZED_WORDLIST_FILE", args[0]);
+        println!("usage: {} PORTMANTOUT_FILE WORDLIST_FILE REDUCED_WORDLIST_FILE", args[0]);
         return Ok(());
     }
 

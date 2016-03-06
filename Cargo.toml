@@ -18,8 +18,8 @@ path = "src/lib.rs"
 
 [[bin]]
 
-name = "normalize"
-path = "src/normalize.rs"
+name = "reduce"
+path = "src/reduce.rs"
 
 [[bin]]
 

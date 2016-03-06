@@ -15,7 +15,7 @@ pub fn main() {
         words.push(line.unwrap());
     }
 
-    let mut normalized = Vec::new();
+    let mut reduced = Vec::new();
     'outer: for word in &words {
         for other_word in &words {
             if word == other_word {
@@ -25,10 +25,10 @@ pub fn main() {
                 continue 'outer;
             }
         }
-        normalized.push(word.to_string());
+        reduced.push(word.to_string());
     }
 
-    for word in &normalized {
+    for word in &reduced {
         println!("{}", word);
     }
 }

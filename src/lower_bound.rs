@@ -21,7 +21,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
 
     let args : Vec<String> = ::std::env::args().collect();
     if args.len() != 2 {
-        println!("usage: {} NORMALIZED_WORDLIST_FILE", args[0]);
+        println!("usage: {} REDUCED_WORDLIST_FILE", args[0]);
         return Ok(());
     }
 
@@ -100,7 +100,11 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     }
 
 
-    println!("OUTPUT -----");
+    println!("OUTPUT CYCLES ---- :");
+    for idx in 0..cycles.len() {
+        println!("new cycle with overlap {}: {:?}", cycles[idx].overlap, cycles[idx].particle);
+    }
+    println!("OUTPUT NONCYLCES -----");
     for key in trie.keys() {
         let word = &key.0;
         println!("{}", ::std::str::from_utf8(word).unwrap());

@@ -39,7 +39,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     'outer: loop {
         let mut most_overlap = 0;
         let mut best_word = Vec::new();
-        for word in &word_set {
+        'inner: for word in &word_set {
             let start = if word.len() > overlap_upper_bound { word.len() - overlap_upper_bound } else { 1 };
             for idx in start..word.len() {
                 let key = BytesTrieKey(word[idx..].to_vec());
@@ -52,8 +52,14 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
                                 if &key.0 != word {
                                     most_overlap = overlap_len;
                                     best_word = word.clone();
-                                    break 'find_word;
-                                }
+                                    if most_overlap == overlap_upper_bound {
+                                        break 'inner;
+                                    } else {
+                                        break 'find_word;
+                                    }
+                                } /*  else {
+                                    panic!("Would have formed a cycle: {:?}", ::std::str::from_utf8(word));
+                                } */
                             }
 
                         }

@@ -39,7 +39,7 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     'outer: loop {
         let mut most_overlap = 0;
         let mut best_word = Vec::new();
-        for key in trie.keys() {
+        'inner: for key in trie.keys() {
             let word = &key.0;
             let start = if word.len() > overlap_upper_bound { word.len() - overlap_upper_bound } else { 1 };
             for idx in start..word.len() {
@@ -50,7 +50,9 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
                         if overlap_len > most_overlap && node.len() > 0 {
                             most_overlap = overlap_len;
                             best_word = word.clone();
-
+                            if most_overlap == overlap_upper_bound {
+                                break 'inner;
+                            }
                         }
                     }
                     _ => {}
@@ -99,9 +101,10 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
 
 
     println!("OUTPUT -----");
-//    for word in word_set {
-//        println!("{}", ::std::str::from_utf8(&word).unwrap());
-//    }
+    for key in trie.keys() {
+        let word = &key.0;
+        println!("{}", ::std::str::from_utf8(word).unwrap());
+    }
 
     return Ok(());
 }

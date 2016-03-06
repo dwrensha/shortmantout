@@ -1,7 +1,5 @@
 extern crate radix_trie;
 
-use std::collections::hash_set::HashSet;
-
 #[derive(PartialEq, Eq, Debug)]
 pub struct BytesTrieKey(Vec<u8>);
 
@@ -28,15 +26,10 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     }
 
     let mut trie = Trie::new();
-    let mut word_set = HashSet::<Vec<u8>>::new();
     for maybe_word in ::std::io::BufReader::new(try!(::std::fs::File::open(&args[1]))).split('\n' as u8) {
         let word = try!(maybe_word);
-        word_set.insert(word.clone());
         trie.insert(BytesTrieKey(word), None);
     }
-    assert_eq!(trie.len(), word_set.len());
-    println!("word count: {}", word_set.len());
-
 
     let mut cycles = Vec::new();
 
@@ -46,19 +39,17 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     'outer: loop {
         let mut most_overlap = 0;
         let mut best_word = Vec::new();
-        for word in &word_set {
+        for key in trie.keys() {
+            let word = &key.0;
             let start = if word.len() > overlap_upper_bound { word.len() - overlap_upper_bound } else { 1 };
             for idx in start..word.len() {
                 let key = BytesTrieKey(word[idx..].to_vec());
                 match trie.get_descendant(&key) {
                     Some(node) if node.len() > 0 => {
                         let overlap_len = word.len() - idx;
-                        if overlap_len > most_overlap {
-                            'find_word: for key in node.keys() {
-                                most_overlap = overlap_len;
-                                best_word = word.clone();
-                                break 'find_word;
-                            }
+                        if overlap_len > most_overlap && node.len() > 0 {
+                            most_overlap = overlap_len;
+                            best_word = word.clone();
 
                         }
                     }
@@ -72,7 +63,6 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
             break 'outer;
         }
 
-        word_set.remove(&best_word);
         trie.remove(&BytesTrieKey(best_word.clone()));
 
         let overlap = &best_word[(best_word.len() - most_overlap)..];
@@ -89,7 +79,6 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
             cycles.push(Cycle { particle: trie_word.clone(), overlap: most_overlap});
         } else {
 
-            word_set.remove(&trie_word);
 
             let mut new_word = best_word.clone();
             for idx in most_overlap .. trie_word.len() {
@@ -97,7 +86,6 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
             }
 
             println!("new_word = {:?}", ::std::str::from_utf8(&new_word));
-            word_set.insert(new_word.clone());
             let new_key = BytesTrieKey(new_word);
             trie.insert(new_key, None);
         }
@@ -105,15 +93,15 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
         overlap_upper_bound = most_overlap;
 
 //        assert_eq!(word_set.len(), trie.len());
-        println!("particle count: {}", word_set.len());
+        println!("particle count: {}", trie.len());
         println!("cycle count: {}", cycles.len());
     }
 
 
     println!("OUTPUT -----");
-    for word in word_set {
-        println!("{}", ::std::str::from_utf8(&word).unwrap());
-    }
+//    for word in word_set {
+//        println!("{}", ::std::str::from_utf8(&word).unwrap());
+//    }
 
     return Ok(());
 }

@@ -33,6 +33,11 @@ path = "src/generate.rs"
 
 [[bin]]
 
+name = "lower_bound"
+path = "src/lower_bound.rs"
+
+[[bin]]
+
 name = "join"
 path = "src/join.rs"
 

@@ -2,7 +2,7 @@ extern crate radix_trie;
 extern crate rand;
 extern crate byteorder;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -126,25 +126,91 @@ impl State {
             portmantout.pop();
         }
 
-        // find the index of each particle.
 
-        let mut start_indices = vec![None; self.particles.len()];
+        // value: (particle_idx, Option<portmantout_idx>)
+        let mut particle_starts = HashMap::<Vec<u8>, (usize, Option<usize>)>::new();
 
-        // hmm... using a trie might be better...
-        for particle_idx in 0 .. self.particles.len() {
-            let particle = &self.particles[particle_idx].chars;
-            // ...
-            'search: for idx in 0 .. portmantout.len() {
-                for char_idx in 0 .. particle.len() {
-                    if particle[char_idx] != portmantout[idx + char_idx] {
-                        continue 'search;
+        for particle_idx in 0..self.particles.len() {
+            let particle = &self.particles[particle_idx];
+            particle_starts.insert(particle.chars.clone(), (particle_idx, None));
+        }
+
+        let mut deq = VecDeque::<Vec<u8>>::new();
+
+        for idx in 0..portmantout.len() {
+            let byte = portmantout[idx];
+            deq.push_back(Vec::new());
+            for word in deq.iter_mut() {
+                word.push(byte);
+                match particle_starts.get_mut(word) {
+                    None => {}
+                    Some(&mut (_, ref mut b)) => {
+                        *b = Some(idx - word.len());
                     }
                 }
-                // we found a match!
-                start_indices[particle_idx] = Some(idx);
+            }
+            if deq.len() > 30 {
+                deq.pop_front();
             }
         }
 
+        // Ok, now push all of these things onto a binary heap.
+        struct BinaryHeapElement {
+            portmantout_idx: usize,
+            particle_idx: usize,
+            particle: Vec<u8>,
+        }
+
+        impl PartialEq for BinaryHeapElement {
+            fn eq(&self, other: &BinaryHeapElement) -> bool {
+                return self.portmantout_idx == other.portmantout_idx;
+            }
+        }
+        impl Eq for BinaryHeapElement {}
+        impl ::std::cmp::Ord for BinaryHeapElement {
+            fn cmp(&self, other: &BinaryHeapElement) -> ::std::cmp::Ordering {
+                // reverse ordering
+                ::std::cmp::Ord::cmp(&other.portmantout_idx, &self.portmantout_idx)
+             }
+        }
+        impl ::std::cmp::PartialOrd for BinaryHeapElement {
+            fn partial_cmp(&self, other: &BinaryHeapElement) -> Option<::std::cmp::Ordering> {
+                Some(::std::cmp::Ord::cmp(self, other))
+            }
+        }
+
+        let mut heap = BinaryHeap::<BinaryHeapElement>::new();
+
+        for (key, value) in particle_starts.iter() {
+            match value {
+                &(_, None) => panic!("did not find particle: {:?}", ::std::str::from_utf8(key)),
+                &(particle_idx, Some(portmantout_idx)) => {
+                    heap.push(BinaryHeapElement { portmantout_idx: portmantout_idx,
+                                                  particle_idx: particle_idx,
+                                                  particle: key.clone() });
+                }
+            }
+        }
+
+        let mut prev_particle_idx :Option<usize> = None;
+
+        loop {
+            match heap.pop() {
+                Some(BinaryHeapElement{ portmantout_idx, particle_idx, particle }) => {
+                    if prev_particle_idx.is_none() {
+                        self.starticle_idx = particle_idx;
+                    }
+                    let particle = &mut self.particles[particle_idx];
+
+                    //add this particle to the end of the chain...
+                    //particle.prev = ..
+                    // prev_particle.next = ...
+
+                    prev_particle_idx = Some(particle_idx);
+                }
+                None => break,
+            }
+        }
 
         unimplemented!()
     }

@@ -43,5 +43,5 @@ path = "src/join.rs"
 
 [[bin]]
 
-name = "anneal"
-path = "src/anneal.rs"
+name = "search"
+path = "src/search.rs"

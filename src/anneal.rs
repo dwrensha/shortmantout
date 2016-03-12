@@ -130,8 +130,10 @@ impl State {
         // value: (particle_idx, Option<portmantout_idx>)
         let mut particle_starts = HashMap::<Vec<u8>, (usize, Option<usize>)>::new();
 
+        let mut max_particle_len = 0;
         for particle_idx in 0..self.particles.len() {
             let particle = &self.particles[particle_idx];
+            max_particle_len = ::std::cmp::max(max_particle_len, particle.chars.len());
             particle_starts.insert(particle.chars.clone(), (particle_idx, None));
         }
 
@@ -150,7 +152,7 @@ impl State {
                     }
                 }
             }
-            if deq.len() > 30 {
+            if deq.len() > max_particle_len + 1 {
                 deq.pop_front();
             }
         }

@@ -276,7 +276,7 @@ fn break_chains<R>(state: &mut State, rng: &mut R) where R: rand::Rng {
         let maybe_next_idx = {
             let particle = &mut state.particles[particle_idx];
             if let Ok(ref next) = particle.next {
-                if rng.gen_range(0, 10000) < 7 {
+                if rng.gen_range(0, 10000) < 3 {
                     // We're going to break this up.
                     state.score -= next.edge.score();
                     Some(next.next_idx)
@@ -618,7 +618,9 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
     coalesce(&mut state, &words_trie, &mut rng);
     try!(write_portmantout(&state));
 
+    let mut counter = 0;
     loop {
+        counter += 1;
         let mut new_state = state.clone();
         break_chains(&mut new_state, &mut rng);
         coalesce(&mut new_state, &words_trie, &mut rng);
@@ -628,9 +630,12 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
             println!("new best score: {}", state.score);
             try!(write_portmantout(&state));
         } else {
-            use std::io::Write;
-            print!(".");
-            try!(::std::io::stdout().flush());
+            if counter > 100 {
+                use std::io::Write;
+                print!(".");
+                try!(::std::io::stdout().flush());
+                counter = 0;
+            }
         }
 
     }

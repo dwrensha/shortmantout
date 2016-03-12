@@ -20,8 +20,8 @@ pub type ParticleTrie = ::radix_trie::Trie<BytesTrieKey, usize>;
 
 #[derive(Clone)]
 enum Edge {
-    Overlapped(usize),
-    Padded { padding: Vec<u8> },
+    Overlapped(usize), // overlapped with at least 1 letter.
+    Padded { padding: Vec<u8> }, // includes the zero padding case.
 }
 
 impl Edge {
@@ -145,7 +145,8 @@ impl State {
                 match particle_starts.get_mut(word) {
                     None => {}
                     Some(&mut (_, ref mut b)) => {
-                        *b = Some(idx - word.len());
+                        assert!(idx + 1 >= word.len());
+                        *b = Some(idx - word.len() + 1);
                     }
                 }
             }
@@ -158,7 +159,6 @@ impl State {
         struct BinaryHeapElement {
             portmantout_idx: usize,
             particle_idx: usize,
-            particle: Vec<u8>,
         }
 
         impl PartialEq for BinaryHeapElement {
@@ -186,33 +186,63 @@ impl State {
                 &(_, None) => panic!("did not find particle: {:?}", ::std::str::from_utf8(key)),
                 &(particle_idx, Some(portmantout_idx)) => {
                     heap.push(BinaryHeapElement { portmantout_idx: portmantout_idx,
-                                                  particle_idx: particle_idx,
-                                                  particle: key.clone() });
+                                                  particle_idx: particle_idx });
                 }
             }
         }
 
-        let mut prev_particle_idx :Option<usize> = None;
+        let mut prev_indexes: Option<(usize, usize)> = None;
 
         loop {
             match heap.pop() {
-                Some(BinaryHeapElement{ portmantout_idx, particle_idx, particle }) => {
-                    if prev_particle_idx.is_none() {
-                        self.starticle_idx = particle_idx;
+                Some( BinaryHeapElement{ portmantout_idx, particle_idx }) => {
+                    match prev_indexes {
+                        None => {
+                            self.starticle_idx = particle_idx;
+                        }
+                        Some((prev_portmantout_idx, prev_particle_idx)) => {
+                            let prev_len = self.particles[prev_particle_idx].chars.len();
+                            let edge = if prev_portmantout_idx + prev_len > portmantout_idx {
+                                Edge::Overlapped(prev_portmantout_idx + prev_len - portmantout_idx)
+                            } else {
+                                Edge::Padded {
+                                    padding: portmantout[(prev_portmantout_idx + prev_len)..portmantout_idx]
+                                        .to_vec()
+                                }
+                            };
+                            self.score += edge.score();
+
+                            self.particles[prev_particle_idx].next = Ok(Next {
+                                next_idx: particle_idx,
+                                edge: edge,
+                            });
+
+                            self.particles[particle_idx].prev = Ok(Prev {
+                                prev_idx: prev_particle_idx,
+                            });
+                        }
                     }
-                    let particle = &mut self.particles[particle_idx];
 
-                    //add this particle to the end of the chain...
-                    //particle.prev = ..
-                    // prev_particle.next = ...
+                    if heap.is_empty() {
+                        self.particles[self.starticle_idx].prev = Err(NoPrev {
+                            chain_end_idx: particle_idx,
+                        });
+                        self.particles[particle_idx].next = Err(NoNext {
+                            chain_start_idx: self.starticle_idx,
+                        });
+                        self.unconnected_on_right = vec![particle_idx];
+                        self.unconnected_on_left = HashSet::new();
+                    }
 
-                    prev_particle_idx = Some(particle_idx);
+                    prev_indexes = Some((portmantout_idx, particle_idx));
+
                 }
                 None => break,
             }
         }
 
-        unimplemented!()
+        println!("resumed!");
+        Ok(())
     }
 
     fn add_starticle(&mut self, particle: Vec<u8>) {
@@ -354,7 +384,7 @@ fn write_portmantout(state: &State) -> Result<(), ::std::io::Error> {
     Ok(())
 }
 
-fn find_next(state: &State, words_trie: &Trie,
+fn find_next(_state: &State, words_trie: &Trie,
              particle: &Particle, particles_trie: &ParticleTrie) -> Next {
     // first try for an overlapped edge.
     for start_idx in (particle.chars.len() - 3) .. particle.chars.len() {
@@ -596,12 +626,12 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
             println!("new best score: {}", state.score);
             try!(write_portmantout(&state));
         } else {
+            use std::io::Write;
             print!(".");
+            try!(::std::io::stdout().flush());
         }
 
     }
-
-    Ok(())
 }
 
 pub fn main() {

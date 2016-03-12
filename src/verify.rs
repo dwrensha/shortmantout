@@ -160,13 +160,13 @@ fn main_result() -> ::std::result::Result<(), Box<::std::error::Error>> {
         }
     }
 
-    let mut normalized_words = Vec::new();
+    let mut reduced_words = Vec::new();
     for maybe_word in ::std::io::BufReader::new(try!(::std::fs::File::open(&args[3]))).split('\n' as u8) {
-        normalized_words.push(try!(maybe_word));
+        reduced_words.push(try!(maybe_word));
     }
-    println!("normalized word count: {}", normalized_words.len());
+    println!("reduced word count: {}", reduced_words.len());
 
-    match verify_contains_all(&portmantout, &normalized_words) {
+    match verify_contains_all(&portmantout, &reduced_words) {
         Ok(()) => {
             println!("success! contains all words");
         }
